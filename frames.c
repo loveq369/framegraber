@@ -14,7 +14,7 @@ int errout(char*str,int err_num)
 #define errout(a,b) b
 #endif
 
-int save_as_jpg(AVCodecContext *ctx, AVFrame *frame, const char filename[])
+int save_as_jpg(AVFrame *frame, const char filename[])
 {
     int out_finished=0, ret=0;
     FILE * fout;
@@ -25,15 +25,12 @@ int save_as_jpg(AVCodecContext *ctx, AVFrame *frame, const char filename[])
     if(!out_codec) return errout("no encoder found",1);
     out_codec_ctx = avcodec_alloc_context3(out_codec);
     if(!out_codec_ctx) fprintf(stderr,"no out codec ctx\n"); // FIXME:
-    out_codec_ctx->width = ctx->width;
-    out_codec_ctx->height = ctx->height;
+    out_codec_ctx->width = frame->width;
+    out_codec_ctx->height = frame->height;
     out_codec_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
     out_codec_ctx->time_base.num = 1;
     out_codec_ctx->time_base.den = 25;
-    out_codec_ctx->qmin = out_codec_ctx->qmax = 3;
-    out_codec_ctx->mb_lmin = out_codec_ctx->lmin = out_codec_ctx->qmin * FF_QP2LAMBDA;
-    out_codec_ctx->mb_lmax = out_codec_ctx->lmax = out_codec_ctx->qmax * FF_QP2LAMBDA;
-    out_codec_ctx->flags |= CODEC_FLAG_QSCALE;
+
     avcodec_open2(out_codec_ctx,out_codec,NULL);
 
     memset(&dst_packet,0,sizeof(dst_packet));
@@ -91,7 +88,7 @@ int main(int argc, char**argv)
 
 
     int tottal_frames=0, sec=0;
-    int64_t at_pts;
+    int64_t target_pts;
     AVFrame *frame = av_frame_alloc();
     memset(&packet,0,sizeof(packet));
     av_init_packet(&packet);
@@ -107,19 +104,18 @@ int main(int argc, char**argv)
                 char filename[255];
 
                 sprintf(filename,"%s_%d.jpg",argv[1],++tottal_frames); // TODO: truncate name only
-                save_as_jpg(codec_ctx,frame,filename);
+                save_as_jpg(frame,filename);
                 /// seek +10 sec
                 sec += 10;
-                at_pts = av_rescale_q(AV_TIME_BASE * sec,
+                target_pts = av_rescale_q(AV_TIME_BASE * sec,
                                       AV_TIME_BASE_Q,
                                       format->streams[stream_number]->time_base);
-                av_seek_frame(format,stream_number,at_pts,0);
+                av_seek_frame(format,stream_number,target_pts,0);
             }
         }
         av_free_packet(&packet);
     }
     /// EOF reached
-
     av_frame_free(&frame);
     avformat_close_input(&format);
     printf("tottal frames %d\n",tottal_frames);
