@@ -1,5 +1,5 @@
 all:
-	gcc frames.c -DVERBOSE -lavformat -lavcodec -lavutil -o frames
+	gcc frames.c -DVERBOSE -lavformat -lavcodec -lavutil -lswscale `freetype-config --cflags` `freetype-config --libs` -o frames
 
  
 

@@ -1,8 +1,13 @@
 #include <stdio.h>
+#include <errno.h>
+
 #include <libavformat/avformat.h>
 #include <libavcodec/avcodec.h>
 #include <libavutil/pixfmt.h> // pixfmt
-#include <errno.h>
+#include <libswscale/swscale.h>
+
+#include <ft2build.h>
+#include FT_FREETYPE_H
 
 #ifdef VERBOSE
 int errout(char*str,int err_num)
@@ -54,18 +59,54 @@ int save_as_jpg(AVFrame *frame, const char filename[])
     return ret;
 }
 
+void dump_text(AVFrame *fr, char* str,int x, int y, FT_Face face)
+{
+    uint8_t gray,
+            *buff = fr->data[0];
+    int charnum, bmpx,bmpy, rgbnum;
+    FT_UInt glyph_index;
+    for ( charnum = 0; str[charnum]; charnum++ )
+    {
+        glyph_index = FT_Get_Char_Index( face, str[charnum] );
+        FT_Load_Glyph( face, glyph_index, FT_LOAD_RENDER );
+        //my_draw_bitmap( &face->glyph->bitmap);
+        //face->glyph->bitmap
+        for(bmpy=0; bmpy<face->glyph->bitmap.rows; bmpy++)
+            for(bmpx=0; bmpx<face->glyph->bitmap.width; bmpx++)
+            {
+                gray = face->glyph->bitmap.buffer[bmpx+bmpy*face->glyph->bitmap.pitch];
+
+                rgbnum = (x+bmpx)*3 + (y+bmpy)*fr->width*3;
+                buff[rgbnum] = (buff[rgbnum] + gray)/256 ? 256 : buff[rgbnum] + gray;
+                buff[rgbnum+1] = (buff[rgbnum] + gray)/256 ? 256 : buff[rgbnum] + gray;
+                buff[rgbnum+2] = (buff[rgbnum] + gray)/256 ? 256 : buff[rgbnum] + gray;
+            }
+        x += face->glyph->bitmap.width;
+    }
+}
+
 int main(int argc, char**argv)
 {
     AVFormatContext * format = 0;
     AVCodecContext * codec_ctx = 0;
     AVCodec * codec=0;
     AVPacket packet;
+    struct SwsContext * pSWSContext = NULL;
+    struct SwsContext * pSWSContextRGB = NULL;
+
+    FT_Library library;
+    FT_Face face;
+
 
     if(argc!=2)
     {
         printf("usage: %s filename\n",argv[0]);
         return EINVAL;
     }
+
+    FT_Init_FreeType( &library );
+    FT_New_Face( library, "DejaVuSans.ttf", 0, &face );
+    FT_Set_Char_Size( face,0,16*64,120,120 );
 
     av_register_all();
 
@@ -89,7 +130,7 @@ int main(int argc, char**argv)
 
     int tottal_frames=0, sec=0;
     int64_t target_pts;
-    AVFrame *frame = av_frame_alloc();
+    AVFrame *pDstVideoFrame,*frame = av_frame_alloc();
     memset(&packet,0,sizeof(packet));
     av_init_packet(&packet);
 
@@ -102,22 +143,47 @@ int main(int argc, char**argv)
             if(frame_finished)
             {
                 char filename[255];
+                uint8_t *dst_video_data;
+                int numBytes;
+                pSWSContext = sws_getCachedContext(pSWSContext,
+                                                   codec_ctx->width, codec_ctx->height,
+                                                   codec_ctx->pix_fmt,
+                                                   codec_ctx->width,codec_ctx->height,
+                                                   AV_PIX_FMT_RGB24,
+                                                   SWS_FAST_BILINEAR, 0, 0, 0);
+                numBytes = avpicture_get_size(AV_PIX_FMT_RGB24,codec_ctx->width,codec_ctx->height);
+                dst_video_data=(uint8_t*)av_mallocz(numBytes);
+                pDstVideoFrame = av_frame_alloc();
+                avpicture_fill((AVPicture*)pDstVideoFrame,dst_video_data,AV_PIX_FMT_RGB24,codec_ctx->width,codec_ctx->height);
+                sws_scale(pSWSContext,
+                          (const uint8_t * const *)frame->data,
+                          frame->linesize,
+                          0,codec_ctx->height,
+                          pDstVideoFrame->data,pDstVideoFrame->linesize);
+                pDstVideoFrame->width = frame->width;
+                pDstVideoFrame->height = frame->height;
+
+                dump_text(pDstVideoFrame, "01:22",0, 0,face);
+
 
                 sprintf(filename,"%s_%d.jpg",argv[1],++tottal_frames); // TODO: truncate name only
-                save_as_jpg(frame,filename);
+                save_as_jpg(pDstVideoFrame,filename);
+                av_frame_free(&pDstVideoFrame);
                 /// seek +10 sec
                 sec += 10;
                 target_pts = av_rescale_q(AV_TIME_BASE * sec,
-                                      AV_TIME_BASE_Q,
-                                      format->streams[stream_number]->time_base);
+                                          AV_TIME_BASE_Q,
+                                          format->streams[stream_number]->time_base);
                 av_seek_frame(format,stream_number,target_pts,0);
             }
         }
         av_free_packet(&packet);
     }
     /// EOF reached
+    sws_freeContext(pSWSContext);
     av_frame_free(&frame);
     avformat_close_input(&format);
     printf("tottal frames %d\n",tottal_frames);
     return 0;
 }
+
