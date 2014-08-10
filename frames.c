@@ -30,60 +30,64 @@ int save_as_jpg(uint8_t **rgbdata, int *linesize, int w, int h, const char filen
     AVCodec * out_codec = avcodec_find_encoder(AV_CODEC_ID_MJPEG);
     // AV_CODEC_ID_MJPEG AV_CODEC_ID_MJPEGB AV_CODEC_ID_LJPEG AV_CODEC_ID_JPEG2000
     if(!out_codec) return errout("no encoder found",1);
-    out_codec_ctx = avcodec_alloc_context3(out_codec);
-    if(!out_codec_ctx) fprintf(stderr,"no out codec ctx\n"); // FIXME:
-    uint8_t *yuv_data[4]= {0};
-    int dst_linesize[4]= {0};
-    struct SwsContext * swsctx_rgb2yuv = NULL;
-
-    swsctx_rgb2yuv = sws_getCachedContext(swsctx_rgb2yuv,
-                                          w,h,
-                                          AV_PIX_FMT_RGB24,
-                                          w,h,
-                                          AV_PIX_FMT_YUVJ420P,
-                                          SWS_FAST_BILINEAR, 0, 0, 0);
-
-    av_image_alloc(yuv_data,dst_linesize,w,h,AV_PIX_FMT_YUVJ420P,16);
-
-    sws_scale(swsctx_rgb2yuv,
-              (const uint8_t * const *)rgbdata,linesize,
-              0,h,
-              yuv_data,dst_linesize);
-
-    frame = av_frame_alloc();
-    avpicture_fill((AVPicture*)frame,yuv_data[0],AV_PIX_FMT_YUVJ420P,w,h);
-
-    out_codec_ctx->width = w;
-    out_codec_ctx->height = h;
-    out_codec_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
-    out_codec_ctx->time_base.num = 1;
-    out_codec_ctx->time_base.den = 25;
-
-    avcodec_open2(out_codec_ctx,out_codec,NULL);
-
-    memset(&dst_packet,0,sizeof(dst_packet));
-    av_init_packet(&dst_packet);
-    dst_packet.data = NULL;
-    dst_packet.size = 0;
-
-
-    avcodec_encode_video2(out_codec_ctx,&dst_packet,frame,&out_finished);
-
-    if((fout = fopen(filename,"wb")))
+    if(!(out_codec_ctx = avcodec_alloc_context3(out_codec)))
     {
-        fwrite(dst_packet.data,1,dst_packet.size,fout);
+        avcodec_close(out_codec_ctx);
+        return errout("codec can't be opened\n",1);
+    }
+
+    uint8_t *yuv_data[4]= {0};
+                          int dst_linesize[4]= {0};
+                          struct SwsContext * swsctx_rgb2yuv = NULL;
+
+                          swsctx_rgb2yuv = sws_getCachedContext(swsctx_rgb2yuv,
+                                           w,h,
+                                           AV_PIX_FMT_RGB24,
+                                           w,h,
+                                           AV_PIX_FMT_YUVJ420P, // deprecated. alternative incompitable with jpeg
+                                           SWS_FAST_BILINEAR, 0, 0, 0);
+
+                          av_image_alloc(yuv_data,dst_linesize,w,h,AV_PIX_FMT_YUVJ420P,16);
+
+                          sws_scale(swsctx_rgb2yuv,
+                                    (const uint8_t * const *)rgbdata,linesize,
+                                    0,h,
+                                    yuv_data,dst_linesize);
+
+                          frame = av_frame_alloc();
+                          avpicture_fill((AVPicture*)frame,yuv_data[0],AV_PIX_FMT_YUVJ420P,w,h);
+
+                          out_codec_ctx->width = w;
+                          out_codec_ctx->height = h;
+                          out_codec_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
+                          out_codec_ctx->time_base.num = 1;
+                          out_codec_ctx->time_base.den = 25;
+
+                          avcodec_open2(out_codec_ctx,out_codec,NULL);
+
+                          memset(&dst_packet,0,sizeof(dst_packet));
+                          av_init_packet(&dst_packet);
+                          dst_packet.data = NULL;
+                          dst_packet.size = 0;
+
+
+                          avcodec_encode_video2(out_codec_ctx,&dst_packet,frame,&out_finished);
+
+                          if((fout = fopen(filename,"wb")))
+{
+    fwrite(dst_packet.data,1,dst_packet.size,fout);
         fclose(fout);
     }
     else ret = errno; // EROFS;
 
-    av_freep(&yuv_data[0]);
-    av_frame_free(&frame);
-    avcodec_close(out_codec_ctx);
-    av_free_packet(&dst_packet);
-    av_free(out_codec_ctx);
+                   av_freep(&yuv_data[0]);
+                   av_frame_free(&frame);
+                   avcodec_close(out_codec_ctx);
+                   av_free_packet(&dst_packet);
+                   av_free(out_codec_ctx);
 
-    return ret;
-}
+                   return ret;
+    }
 
 void dump_text_to_rgb(uint8_t *buff, int width, int height, char* str,int x, int y, FT_Face face)
 {
@@ -119,7 +123,7 @@ void cut_to_name(char * str)
 
     if(dot!=-1) str[dot] = 0;
     if(slash!=-1 && slash<dot)
-    memmove(str,&str[slash+1],dot-slash);
+        memmove(str,&str[slash+1],dot-slash);
 }
 
 int main(int argc, char**argv)
@@ -151,16 +155,18 @@ int main(int argc, char**argv)
     if(0>avformat_find_stream_info(format,NULL))  //< check if any stream availaible
         return errout("no video stream vound",1);
 
-
     int stream_number = av_find_best_stream(format,AVMEDIA_TYPE_VIDEO,-1,-1,NULL,0);
-    if(AVERROR_STREAM_NOT_FOUND == stream_number) codec_ctx = NULL; // FIXME: further decoding imposible
+    if(AVERROR_STREAM_NOT_FOUND == stream_number)
+        return errout("format not supported\n",1);
+
     else codec_ctx = format->streams[stream_number]->codec;
 
     codec = avcodec_find_decoder(codec_ctx->codec_id);
     if(!codec)
         return errout("decoder not found\n",1);
 
-    if(avcodec_open2(codec_ctx,codec,NULL)) return 1; // TODO: errlog
+    if(avcodec_open2(codec_ctx,codec,NULL))
+        return errout("codec not supported\n",1);
 
 
     int frame_count=0, sec=0;
@@ -199,10 +205,11 @@ int main(int argc, char**argv)
                           0,codec_ctx->height,
                           dst_data,dst_linesize);
 
-                sprintf(filename,"%03d:%02d:%02d",sec/60/60,sec/60,sec%60);
+                sprintf(filename,"%02d:%02d:%02d",sec/60/60,sec/60,sec%60);
                 dump_text_to_rgb(dst_data[0],frame->width,frame->height,filename,frame->width-150,20,face);
 
-                sprintf(filename,"%s_%d.jpg",argv[1],++frame_count);
+                sprintf(filename,"%s/%s_%d.jpg",argc==3?argv[2]:".",
+                        argv[1],++frame_count);
                 save_as_jpg(dst_data,dst_linesize,frame->width,frame->height,filename);
 
                 /// seek +10 sec
@@ -222,4 +229,3 @@ int main(int argc, char**argv)
     printf("tottal frames %d\n",frame_count);
     return 0;
 }
-
