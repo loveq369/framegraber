@@ -144,7 +144,8 @@ int main(int argc, char**argv)
     }
 
     FT_Init_FreeType( &library );
-    FT_New_Face( library, "DejaVuSans.ttf", 0, &face );
+    if(FT_New_Face( library,"DejaVuSans.ttf",0,&face))
+        return errout("can't load ./DejaVuSans.ttf",1);
     FT_Set_Char_Size( face,0,16*64,120,120 );
 
     av_register_all();
