@@ -3,6 +3,10 @@ frames
 *~
 video.*
 
+<<<<<<< HEAD
 .cproject
 .project
 .settings/
+=======
+frames.zip
+>>>>>>> ec574cb57b25c112968d5308ef1365da6149a13f
