@@ -150,7 +150,7 @@ int main(int argc, char**argv)
 				dump_text_to_rgb(dst_data[0], frame->width, frame->height,
 						filename, frame->width - 150, 20, face);
 
-				sprintf(filename, "%s/%s_%d.png", argc == 3 ? argv[2] : ".",
+				sprintf(filename, "%s/%s_%d", argc == 3 ? argv[2] : ".",
 						argv[1], ++frame_count);
 				/*save_as_jpg(dst_data, dst_linesize, frame->width, frame->height,
 						filename);*/
